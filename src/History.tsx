@@ -3,7 +3,9 @@ import { Activity, Message, User, CardActionTypes } from 'botframework-directlin
 import { ChatState, FormatState, SizeState } from './Store';
 import { Dispatch, connect } from 'react-redux';
 import { ActivityView } from './ActivityView';
-import { konsole, classList, doCardAction, IDoCardAction, sendMessage } from './Chat';
+import { classList, doCardAction, IDoCardAction } from './Chat';
+import * as konsole from './Konsole';
+import { sendMessage } from './Store';
 
 export interface HistoryProps {
     format: FormatState,
@@ -13,11 +15,12 @@ export interface HistoryProps {
     setMeasurements: (carouselMargin: number) => void,
     onClickRetry: (activity: Activity) => void,
     onClickCardAction: () => void,
-    setFocus: () => void,
 
     isFromMe: (activity: Activity) => boolean,
     isSelected: (activity: Activity) => boolean,
     onClickActivity: (activity: Activity) => React.MouseEventHandler<HTMLDivElement>,
+
+    onCardAction: () => void,
     doCardAction: IDoCardAction
 }
 
@@ -46,11 +49,11 @@ export class HistoryView extends React.Component<HistoryProps, {}> {
 
             // Subtract the padding from the offsetParent's width to get the width of the content
             const maxContentWidth = (this.carouselActivity.messageDiv.offsetParent as HTMLElement).offsetWidth - paddedWidth;
-            
+
             // Subtract the content width from the chat width to get the margin.
             // Next time we need to get the content width (on a resize) we can use this margin to get the maximum content width
             const carouselMargin = this.props.size.width - maxContentWidth;
-            
+
             konsole.log('history measureMessage ' + carouselMargin);
 
             // Finally, save it away in the Store, which will force another re-render
@@ -76,10 +79,10 @@ export class HistoryView extends React.Component<HistoryProps, {}> {
     }
 
     // In order to do their cool horizontal scrolling thing, Carousels need to know how wide they can be.
-    // So, at startup, we create this mock Carousel activity and measure it. 
+    // So, at startup, we create this mock Carousel activity and measure it.
     private measurableCarousel = () =>
         // find the largest possible message size by forcing a width larger than the chat itself
-        <WrappedActivity 
+        <WrappedActivity
             ref={ x => this.carouselActivity = x }
             activity={ {
                 type: 'message',
@@ -103,8 +106,8 @@ export class HistoryView extends React.Component<HistoryProps, {}> {
     // 3. (this is also the normal re-render case) To render without the mock activity
 
     private doCardAction(type: CardActionTypes, value: string | object) {
-        this.props.setFocus();
         this.props.onClickCardAction();
+        this.props.onCardAction && this.props.onCardAction();
         return this.props.doCardAction(type, value);
     }
 
@@ -146,8 +149,15 @@ export class HistoryView extends React.Component<HistoryProps, {}> {
             }
         }
 
+        const groupsClassName = classList('wc-message-groups', !this.props.format.options.showHeader && 'no-header');
+
         return (
-            <div className="wc-message-groups" ref={ div => this.scrollMe = div || this.scrollMe }>
+            <div
+                className={ groupsClassName }
+                ref={ div => this.scrollMe = div || this.scrollMe }
+                role="log"
+                tabIndex={ 0 }
+            >
                 <div className="wc-message-group-content" ref={ div => { if (div) this.scrollContent = div }}>
                     { content }
                 </div>
@@ -162,7 +172,7 @@ export const History = connect(
         format: state.format,
         size: state.size,
         activities: state.history.activities,
-        // only used to create helper functions below 
+        // only used to create helper functions below
         connectionSelectedActivity: state.connection.selectedActivity,
         selectedActivity: state.history.selectedActivity,
         botConnection: state.connection.botConnection,
@@ -171,7 +181,7 @@ export const History = connect(
         setMeasurements: (carouselMargin: number) => ({ type: 'Set_Measurements', carouselMargin }),
         onClickRetry: (activity: Activity) => ({ type: 'Send_Message_Retry', clientActivityId: activity.channelData.clientActivityId }),
         onClickCardAction: () => ({ type: 'Card_Action_Clicked'}),
-        // only used to create helper functions below 
+        // only used to create helper functions below
         sendMessage
     }, (stateProps: any, dispatchProps: any, ownProps: any): HistoryProps => ({
         // from stateProps
@@ -182,14 +192,15 @@ export const History = connect(
         setMeasurements: dispatchProps.setMeasurements,
         onClickRetry: dispatchProps.onClickRetry,
         onClickCardAction: dispatchProps.onClickCardAction,
-        // from ownProps
-        setFocus: ownProps.setFocus,
         // helper functions
         doCardAction: doCardAction(stateProps.botConnection, stateProps.user, stateProps.format.locale, dispatchProps.sendMessage),
         isFromMe: (activity: Activity) => activity.from.id === stateProps.user.id,
         isSelected: (activity: Activity) => activity === stateProps.selectedActivity,
-        onClickActivity: (activity: Activity) => stateProps.connectionSelectedActivity && (() => stateProps.connectionSelectedActivity.next({ activity }))
-    })
+        onClickActivity: (activity: Activity) => stateProps.connectionSelectedActivity && (() => stateProps.connectionSelectedActivity.next({ activity })),
+        onCardAction: ownProps.onCardAction
+    }), {
+        withRef: true
+    }
 )(HistoryView);
 
 const getComputedStyleValues = (el: HTMLElement, stylePropertyNames: string[]) => {
